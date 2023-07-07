@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 /// @title Contains 512-bit math functions
 /// @notice Facilitates multiplication and division that can have overflow of an intermediate value without any loss of precision
 /// @dev Handles "phantom overflow" i.e., allows multiplication and division where an intermediate value overflows 256 bits
-library FullMath {
+contract FullMath {
     /// @notice Calculates floor(a×b÷denominator) with full precision. Throws if result overflows a uint256 or denominator == 0
     /// @param a The multiplicand
     /// @param b The multiplier
@@ -15,7 +15,7 @@ library FullMath {
         uint256 a,
         uint256 b,
         uint256 denominator
-    ) internal pure returns (uint256 result) {
+    ) public pure returns (uint256 result) {
         unchecked {
             // 512-bit multiply [prod1 prod0] = a * b
             // Compute the product mod 2**256 and mod 2**256 - 1
@@ -114,7 +114,7 @@ library FullMath {
         uint256 a,
         uint256 b,
         uint256 denominator
-    ) internal pure returns (uint256 result) {
+    ) public pure returns (uint256 result) {
         unchecked {
             result = mulDiv(a, b, denominator);
             if (mulmod(a, b, denominator) > 0) {
