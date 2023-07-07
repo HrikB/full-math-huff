@@ -24,6 +24,41 @@
 }
 
 #define macro MUL_DIV() = takes(0) returns(0) {
+    _MUL_DIV()            // [result]
+    0x00 mstore           // []
+    0x20 0x00 return      // []
+}
+
+#define macro MUL_DIV_ROUNDING_UP() = takes(0) returns(0) {
+    _MUL_DIV()   // [result]
+
+    // Load args
+    0x44 calldataload       // [denominator, b, a, result]
+    0x24 calldataload       // [b, a, result]   
+    0x04 calldataload       // [a, result]
+
+    mulmod                  // [mm, result]
+    iszero                  // [is_zero, result]
+    no_round jumpi          // [result]
+
+    0x00 not                // [~0, result]
+    dup2                    // [result, ~0, result]
+    lt                      // [lt, result]
+    increment jumpi         // [result]
+
+    0x00 0x00 revert
+
+    increment:
+        0x01 add            // [result + 1]
+        0x00 mstore         // []
+        0x20 0x00 return    
+
+    no_round:
+        0x00 mstore         // []
+        0x20 0x00 return
+}
+
+#define macro _MUL_DIV() = takes(0) returns(1) {
     // Load args
     0x04 calldataload       // [a]
     0x24 calldataload       // [b, a]   
@@ -129,8 +164,6 @@
         mul                     // [prod1 * twos, prod0, denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
         or                      // [(new) prod0, denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
 
-        // WORKS!
-
         // Invert denominator mod 2**256
         // Now that denominator is an odd number, it has an inverse
         // modulo 2**256 such that denominator * inv = 1 mod 2**256.
@@ -194,19 +227,12 @@
         // compute result
         dup3                     // [prod0, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
         mul                      // [result, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
-        0x00 mstore              // [denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
-        0x20 0x00 return
+        0x00 iszero
+        finish jumpi
 
     standard_div:
         pop                 // [prod0, denominator, b, a]
         div                 // [result, b, a]
-        0x00 mstore         // [b, a]
-        0x20 0x00 return
 
-    0x20 0x00 return
-}
-
-#define macro MUL_DIV_ROUNDING_UP() = takes(0) returns(0) {
-    // Load args
-    0x20 0x00 return
+    finish:
 }
