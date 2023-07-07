@@ -15,6 +15,14 @@ contract FullMathHuffTest is Test {
         fullMathLibrary = new FullMath();
     }
 
+    function testAbc() external {
+        fullMathLibrary.mulDiv(
+            2,
+            57896044618658097711785492504343953926634992332820282019728792003956564819968,
+            3
+        );
+    }
+
     function testMulDiv() public {
         assertEq(fullMathLibrary.mulDiv(2.5e27, 0.5e27, 1e27), 1.25e27);
         assertEq(fullMathLibrary.mulDiv(2.5e18, 0.5e18, 1e18), 1.25e18);

@@ -1,0 +1,212 @@
+/// @title FullMath
+/// @notice SPDX-License-Identifier: MIT
+/// @author Hrik Bhowal <https://github.com/hrikb>
+/// @notice A huff reimplementation of the Uniswap V3 FullMath library
+
+// Interface
+#define function mulDiv(uint256 a, uint256 b, uint256 denominator) pure returns(uint256)
+#define function mulDivRoundingUp(uint256 a, uint256 b, uint256 denominator) pure returns(uint256)
+
+#define macro MAIN() = takes(0) returns(0) {
+    // Identify which function is being called.
+    0x00 calldataload 0xE0 shr          // [func_sig]
+
+    // With only two functions, using linear dispatching will suffice
+    dup1 __FUNC_SIG(mulDiv)             eq mulDivLoc               jumpi
+    dup1 __FUNC_SIG(mulDivRoundingUp)   eq mulDivRoundingUpLoc     jumpi
+
+    0x00 dup1 revert        // nop fallback function
+
+    mulDivLoc:
+        MUL_DIV()
+    mulDivRoundingUpLoc:
+        MUL_DIV_ROUNDING_UP()
+}
+
+#define macro MUL_DIV() = takes(0) returns(0) {
+    // Load args
+    0x04 calldataload       // [a]
+    0x24 calldataload       // [b, a]   
+    0x44 calldataload       // [denominator, b, a]
+
+    // 512-bit multiply [prod1 prod0] = a * b
+    // Compute the product mod 2**256 and mod 2**256 - 1
+    // then use the Chinese Remainder Theorem to reconstruct
+    // the 512 bit result. The result is stored in two 256
+    // variables such that product = prod1 * 2**256 + prod0
+
+    // prod0
+    dup3                    // [a, denominator, b, a]
+    dup3                    // [b, a, denominator, b, a]
+    mul                     // [prod0, denominator, b, a]
+
+    // prod1
+    0x00                    // [0, prod0, denominator, b, a]
+    not                     // [~0, prod0, denominator, b, a]
+    dup5                    // [a, ~0, prod0, denominator, b, a]
+    dup5                    // [b, a, ~0, prod0, denominator, b, a]
+    mulmod                  // [mm, prod0, denominator, b, a]
+    // lt(mm, prod0)
+    dup2                    // [prod0, mm, prod0, denominator, b, a]
+    dup2                    // [mm, prod0, mm, prod0, denominator, b, a]
+    lt                      // [lt, mm, prod0, denominator, b, a]
+    // sub(mm, prod0)
+    dup3                    // [prod0, lt, mm, prod0, denominator, b, a]
+    dup3                    // [mm, prod0, lt, mm, prod0, denominator, b, a]
+    sub                     // [sub, lt, mm, prod0, denominator, b, a]
+    sub                     // [prod1, mm, prod0, denominator, b, a]
+    swap1                   // [mm, prod1, prod0, denominator, b, a]
+    pop                     // [prod1, prod0, denominator, b, a]
+
+    // Make sure the result is less than 2**256.
+    // Also prevents denominator == 0
+    dup1                    // [prod1, prod1, prod0, denominator, b, a]
+    dup4                    // [denominator, prod1, prod1, prod0, denominator, b, a]
+    gt                      // [denominator > prod1, prod1, prod0, denominator, b, a]
+    valid jumpi             // [prod1, prod0, denominator, b, a]
+
+    0x00 0x00 revert        // []
+
+    valid:
+        dup1                // [prod1, prod1, prod0, denominator, b, a]
+        iszero              // [prod1 == 0, prod1, prod0, denominator, b, a]
+
+        // Handle non-overflow cases, 256 by 256 division
+        standard_div jumpi  // [prod1, prod0, denominator, b, a]
+
+        ///////////////////////////////////////////////
+        // 512 by 256 division.
+        ///////////////////////////////////////////////
+
+        // remainder
+        dup3                // [denominator, prod1, prod0, denominator, b, a]
+        dup5                // [b, denominator, prod1, prod0, denominator, b, a]
+        dup7                // [a, b, denominator, prod1, prod0, denominator, b, a]
+        mulmod              // [remainder, prod1, prod0, denominator, b, a]
+
+        // Subtract 256 bit number from 512 bit number
+        dup3                // [prod0, remainder, prod1, prod0, denominator, b, a]
+        dup2                // [remainder, prod0, remainder, prod1, prod0, denominator, b, a]
+        gt                  // [remainder > prod0, remainder, prod1, prod0, denominator, b, a]
+        dup3                // [prod1, remainder > prod0, remainder, prod1, prod0, denominator, b, a]
+        sub                 // [(new) prod1, remainder, prod1, prod0, denominator, b, a]
+        dup2                // [remainder, prod1, remainder, prod1, prod0, denominator, b, a]
+        dup5                // [prod0, remainder, prod1, remainder, prod1, prod0, denominator, b, a]
+        sub                 // [(new) prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+
+        // Factor powers of two out of denominator
+        // Compute largest power of two divisor of denominator.
+        // Always >= 1.
+        // twos
+        dup6                    // [denominator, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        dup1                    // [denominator, denominator, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        0x00                    // [0, denominator, denominator, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        sub                     // [0 - denominator, denominator, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        and                     // [twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+
+
+        // Divide denominator by power of two
+        dup1                    // [twos, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        dup8                    // [denominator, twos, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        div                     // [(new) denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+
+        // Divide [prod1 prod0] by the factors of two
+        dup2                    // [twos, denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        dup4                    // [prod0, twos, denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        div                     // [new (prod0), denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+
+        // Shift in bits from prod1 into prod0. For this we need
+        // to flip `twos` such that it is 2**256 / twos.
+        // If twos is zero, then it becomes one
+        0x01                    // [1, prod0, denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        dup4                    // [twos, 1, prod0, denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        dup1                    // [twos, twos, 1, prod0, denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        0x00                    // [0, twos, twos, 1, prod0, denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        sub                     // [0 - twos, twos, 1, prod0, denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        div                     // [(0 - twos) / twos, 1, prod0, denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        add                     // [(new) twos, prod0, denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        dup6                    // [prod1, twos, prod0, denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                     // [prod1 * twos, prod0, denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        or                      // [(new) prod0, denominator, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+
+        // WORKS!
+
+        // Invert denominator mod 2**256
+        // Now that denominator is an odd number, it has an inverse
+        // modulo 2**256 such that denominator * inv = 1 mod 2**256.
+        // Compute the inverse by starting with a seed that is correct
+        // correct for four bits. That is, denominator * inv = 1 mod 2**4
+        // inv
+        swap1                    // [denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        dup1                     // [denominator, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        0x03                     // [3, denominator, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                      // [3 * denominator, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        0x02 xor                 // [inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+
+        // inverse mod 2**8
+        dup2                     // [denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        dup2                     // [inv, denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                      // [inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        0x02                     // [2, inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        sub                      // [2 - inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                      // [(new) inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+
+        // inverse mod 2**16
+        dup2                     // [denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        dup2                     // [inv, denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                      // [inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        0x02                     // [2, inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        sub                      // [2 - inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                      // [(new) inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+
+        // inverse mod 2**32
+        dup2                     // [denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        dup2                     // [inv, denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                      // [inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        0x02                     // [2, inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        sub                      // [2 - inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                      // [(new) inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+
+        // inverse mod 2**64
+        dup2                     // [denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        dup2                     // [inv, denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                      // [inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        0x02                     // [2, inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        sub                      // [2 - inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                      // [(new) inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+
+        // inverse mod 2**128
+        dup2                     // [denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        dup2                     // [inv, denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                      // [inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        0x02                     // [2, inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        sub                      // [2 - inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                      // [(new) inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+
+        // inverse mod 2**256
+        dup2                     // [denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        dup2                     // [inv, denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                      // [inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        0x02                     // [2, inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        sub                      // [2 - inv * denominator, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                      // [(new) inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+
+        // compute result
+        dup3                     // [prod0, inv, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        mul                      // [result, denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        0x00 mstore              // [denominator, prod0, twos, prod0, prod1, remainder, prod1, prod0, denominator, b, a]
+        0x20 0x00 return
+
+    standard_div:
+        pop                 // [prod0, denominator, b, a]
+        div                 // [result, b, a]
+        0x00 mstore         // [b, a]
+        0x20 0x00 return
+
+    0x20 0x00 return
+}
+
+#define macro MUL_DIV_ROUNDING_UP() = takes(0) returns(0) {
+    // Load args
+    0x20 0x00 return
+}
