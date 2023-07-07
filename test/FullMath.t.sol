@@ -8,19 +8,11 @@ import {Test} from "forge-std/Test.sol";
 /**
  * @dev Tests copied from https://github.com/Vectorized/solady/blob/main/test/FixedPointMathLib.t.sol
  */
-contract FullMathHuffTest is Test {
+contract FullMathTest is Test {
     FullMath fullMathLibrary;
 
     function setUp() public {
         fullMathLibrary = new FullMath();
-    }
-
-    function testAbc() external {
-        fullMathLibrary.mulDiv(
-            2,
-            57896044618658097711785492504343953926634992332820282019728792003956564819968,
-            3
-        );
     }
 
     function testMulDiv() public {
